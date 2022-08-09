@@ -1,8 +1,13 @@
-import express from 'express'
-import { retrieveBaseAccessToken } from './server.js'
+import { retrieveBaseAccessTokenPayload,refreshAccessToken } from './server.js'
 
-const app = express()
+let access_token = null;
+let refresh_token = null;
 
-retrieveBaseAccessToken(app).then((data) => {
-  console.log("in main: " + data);
-});
+let intial_access_payload = await retrieveBaseAccessTokenPayload();
+access_token = intial_access_payload.access_token
+refresh_token = intial_access_payload.refresh_token
+console.log("Access Token: " + access_token);
+
+//verify refresh works
+access_token = await refreshAccessToken(refresh_token);
+console.log("New Access Token: " + access_token);

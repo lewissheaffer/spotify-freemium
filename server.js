@@ -4,6 +4,7 @@ import 'dotenv/config'
 import fetch from 'node-fetch'
 import path from 'path'
 import open from 'open'
+import express from 'express'
 import session from 'express-session'
 
 const port = process.env.PORT || 8080
@@ -12,20 +13,21 @@ const client_secret = process.env.client_secret
 const redirect_uri = `${process.env.root_url}/callback`
 
 /**
- * Retrieves the user's access token  
- * @param {*} app 
+ * Retrieves the user's access token payload returned in Spotify's OAuth transaction
+ * Opens a browser tab for the user to login/give access to the client
+ * @returns A json object containing the user's access token and refresh token
  */
-export const retrieveBaseAccessToken = async (app) => {
+export const retrieveBaseAccessTokenPayload = async () => {
     return (new Promise(resolve => {
+        const app = express()
         app.use(session({secret: generateRandomString(32), access_token:null, refresh_token:null}));
 
         app.get('/', function(req, res) {
             res.sendFile(path.join(path.resolve(), './public/authSuccess.html'))
-            console.log("in the method: " + req.session.access_token);
             if(server) {
                 console.log("closing server");
                 server.close(() => {
-                    resolve(req.session.access_token);
+                    resolve(req.session);
                 })
             }
         })
@@ -66,8 +68,8 @@ export const retrieveBaseAccessToken = async (app) => {
                 }
     
                 fetch('https://accounts.spotify.com/api/token', authOptions)
-                .then((response) => response.json())
-                .then(data=>{
+                .then(response => response.json())
+                .then(data => {
                     req.session.access_token = data.access_token;
                     req.session.refresh_token = data.refresh_token;
                     res.redirect('/')
@@ -80,34 +82,41 @@ export const retrieveBaseAccessToken = async (app) => {
     })) 
 }
 
-const refreshAccessToken = () => {
-    var refresh_token = req.query.refresh_token
+/**
+ * Retrieves access token (new or old) when provided the refresh token
+ * @param {*} refresh_token Spotify account refresh token
+ * @returns A valid access token (if refresh is still valid), otherwise returns null
+ */
+export const refreshAccessToken = async (refresh_token) => {
     var authOptions = {
         method:'POST',
-        body: {
+        body: new URLSearchParams({
             grant_type: 'refresh_token',
             refresh_token: refresh_token,
             client_id:client_id,
-        },
+        }).toString(),
         headers: { 
             'Authorization': 'Basic ' + (new Buffer.from(client_id + ':' + client_secret).toString('base64')),
             'Content-Type': 'application/x-www-form-urlencoded'
         },
     }
 
-    fetch('https://accounts.spotify.com/api/token', authOptions)
-    .then((response) => {
-        if (!error && response.statusCode === 200) {
-            var access_token = body.access_token
-            
-            res.send({
-                'access_token': access_token
-            })
-        }
-    })
+    const response = await fetch('https://accounts.spotify.com/api/token', authOptions);
+
+    // Return null if negative status code (likely when refresh token runs out)
+    if (!response.ok){
+        return null;
+    }
+
+    const data = await response.json();
+    return data.access_token;
 }
 
-
+/**
+ * Generates a string of random characters of a given length
+ * @param {*} length The number of desired characters for the string
+ * @returns A string of random characters of the desired length
+ */
 const generateRandomString = (length) => {
     var charSet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
     var randomString = ''
