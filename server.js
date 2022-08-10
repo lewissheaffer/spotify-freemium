@@ -5,7 +5,6 @@ import fetch from 'node-fetch'
 import path from 'path'
 import open from 'open'
 import express from 'express'
-import session from 'express-session'
 
 const port = process.env.PORT || 8080
 const client_id = process.env.client_id
@@ -20,21 +19,11 @@ const redirect_uri = `${process.env.root_url}/callback`
 export const retrieveBaseAccessTokenPayload = async () => {
     return (new Promise(resolve => {
         const app = express()
-        app.use(session({secret: generateRandomString(32), access_token:null, refresh_token:null}));
 
         app.get('/', function(req, res) {
-            res.sendFile(path.join(path.resolve(), './public/authSuccess.html'))
-            if(server) {
-                console.log("closing server");
-                server.close(() => {
-                    resolve(req.session);
-                })
-            }
-        })
-    
-        app.get('/login', function(req, res) {
             var state = generateRandomString(16)
             var scope = 'user-modify-playback-state'
+            // Redirect to spotify's website for the user to login/authenticate
             res.redirect('https://accounts.spotify.com/authorize?' +
                 new URLSearchParams({
                 response_type: 'code',
@@ -70,15 +59,19 @@ export const retrieveBaseAccessTokenPayload = async () => {
                 fetch('https://accounts.spotify.com/api/token', authOptions)
                 .then(response => response.json())
                 .then(data => {
-                    req.session.access_token = data.access_token;
-                    req.session.refresh_token = data.refresh_token;
-                    res.redirect('/')
+                    res.sendFile(path.join(path.resolve(), './public/authSuccess.html'))
+                    if(server) {
+                        console.log("closing server")
+                        server.close(() => {
+                            resolve(data)
+                        })
+                    }
                 })
             }
         })
 
         const server = app.listen(port)
-        open(`${process.env.root_url}/login`);
+        open(`${process.env.root_url}/`)
     })) 
 }
 
@@ -101,15 +94,15 @@ export const refreshAccessToken = async (refresh_token) => {
         },
     }
 
-    const response = await fetch('https://accounts.spotify.com/api/token', authOptions);
+    const response = await fetch('https://accounts.spotify.com/api/token', authOptions)
 
     // Return null if negative status code (likely when refresh token runs out)
     if (!response.ok){
-        return null;
+        return null
     }
 
-    const data = await response.json();
-    return data.access_token;
+    const data = await response.json()
+    return data.access_token
 }
 
 /**
